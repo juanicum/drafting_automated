@@ -1,97 +1,60 @@
 import { NextResponse } from "next/server";
-import { buildUserPrompt, SYSTEM_PROMPT, type VerificationInput } from "../../../lib/prompt";
+import { buildDraftText, buildGenerationPrompt, GENERATION_SYSTEM_PROMPT } from "../../../lib/prompt";
+import { callOpenAIJson } from "../../../lib/openai";
+import { getStyleExamples, insertDraft, upsertCase } from "../../../lib/supabase";
+import type { VerificationCase, VerificationDraft } from "../../../lib/types";
 
 export const runtime = "nodejs";
 
-type OpenAIChatResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
-  error?: {
-    message?: string;
-  };
-};
-
-function hasMinimumFields(input: Partial<VerificationInput>) {
+function hasMinimumFields(input: Partial<VerificationCase>) {
   return Boolean(
-    input.titulo?.trim() &&
-    input.categoria?.trim() &&
-    input.contexto?.trim() &&
-    input.hallazgos?.trim() &&
-    input.verificaciones?.trim() &&
-    input.fuentes?.trim()
+    input.titulo_conclusion?.trim() &&
+      input.categoria?.trim() &&
+      input.contexto?.trim() &&
+      input.que_circula?.trim() &&
+      input.que_verificamos?.trim() &&
+      input.hallazgos_evidencia?.trim() &&
+      input.conclusion_categoria?.trim() &&
+      input.fuentes?.trim()
   );
-}
-
-function tryParseJson(text: string) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("La IA no devolvió un JSON válido.");
-    return JSON.parse(match[0]);
-  }
 }
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    const input = (await request.json()) as VerificationCase;
 
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "Falta configurar OPENAI_API_KEY en Vercel o en .env.local." },
-        { status: 500 }
-      );
+    if (!input.id) {
+      return NextResponse.json({ error: "Falta el ID del caso." }, { status: 400 });
     }
-
-    const input = (await request.json()) as Partial<VerificationInput>;
 
     if (!hasMinimumFields(input)) {
       return NextResponse.json(
-        { error: "Faltan campos obligatorios: título, categoría, contexto, hallazgos, verificaciones y fuentes." },
+        {
+          error:
+            "Faltan campos obligatorios: titular, categoría, contexto, qué circula, qué verificamos, hallazgos, conclusión y fuentes. Puedes completarlos desde el chat o desde la ficha."
+        },
         { status: 400 }
       );
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.25,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: buildUserPrompt(input as VerificationInput) }
-        ]
-      })
+    const styleExamples = await getStyleExamples(input.categoria, 3);
+
+    const draft = await callOpenAIJson<VerificationDraft>({
+      systemPrompt: GENERATION_SYSTEM_PROMPT,
+      userPrompt: buildGenerationPrompt(input, styleExamples),
+      temperature: 0.2
     });
 
-    const data = (await response.json()) as OpenAIChatResponse;
+    const normalizedDraft: VerificationDraft = {
+      ...draft,
+      categoria: input.categoria,
+      texto_completo: draft.texto_completo?.trim() || buildDraftText(draft)
+    };
 
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: data.error?.message || "Error al llamar a la API de OpenAI." },
-        { status: response.status }
-      );
-    }
+    await upsertCase({ ...input, estado: "redactado" });
+    await insertDraft(input.id, normalizedDraft);
 
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) {
-      return NextResponse.json(
-        { error: "La IA no devolvió contenido." },
-        { status: 500 }
-      );
-    }
-
-    const draft = tryParseJson(content);
-    return NextResponse.json({ draft });
+    return NextResponse.json({ draft: normalizedDraft, used_style_examples: styleExamples.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error inesperado.";
     return NextResponse.json({ error: message }, { status: 500 });

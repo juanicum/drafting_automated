@@ -1,34 +1,55 @@
-# Redactor IA de verificaciones — MVP ChequeaBolivia
+# Agente editorial IA — ChequeaBolivia v2
 
-Primera versión mínima para probar en Vercel.
+Versión inicial para probar en Vercel con:
 
-## Qué hace
+- Chat guiado con un agente editorial.
+- Ficha estructurada según la nueva estructura de redacción de ChequeaBolivia.
+- Generación de borrador con 6 secciones editoriales.
+- Guardado opcional en Supabase.
+- Aprobación de versiones finales para que se usen como ejemplos editoriales futuros.
 
-- Muestra un formulario con datos editoriales básicos.
-- Envía esos datos a una ruta backend de Next.js.
-- Llama a la API de OpenAI desde el servidor, sin exponer la API key en el navegador.
-- Devuelve un borrador estructurado y editable.
+## Estructura editorial incluida
 
-## Qué NO hace todavía
+1. Titular con conclusión.
+2. Explicación del contexto.
+3. Qué circula.
+4. Qué verificamos.
+5. Hallazgos con evidencia.
+6. Conclusión con categoría y evidencia.
 
-- No guarda verificaciones en base de datos.
-- No exporta a Drupal o Word.
-- No usa ejemplos previos de ChequeaBolivia.
-- No reemplaza revisión humana.
+## Variables de entorno en Vercel
 
-## Variable obligatoria en Vercel
-
-En el proyecto de Vercel crea esta variable de entorno:
+Obligatoria:
 
 ```bash
 OPENAI_API_KEY=tu_api_key_aqui
 ```
 
-Opcionalmente puedes crear:
+Opcional:
 
 ```bash
 OPENAI_MODEL=gpt-4.1-mini
 ```
+
+Para guardar en base de datos:
+
+```bash
+SUPABASE_URL=https://tu-proyecto.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key_aqui
+```
+
+Sin Supabase configurado, la herramienta igual funciona para conversar y generar borradores, pero no guardará casos ni ejemplos editoriales.
+
+## Crear la base de datos en Supabase
+
+1. Crea un proyecto en Supabase.
+2. Entra a SQL Editor.
+3. Copia y ejecuta el contenido de `supabase/schema.sql`.
+4. En Project Settings > API copia:
+   - Project URL → `SUPABASE_URL`
+   - service_role key → `SUPABASE_SERVICE_ROLE_KEY`
+5. Pega esas variables en Vercel > Settings > Environment Variables.
+6. Haz redeploy.
 
 ## Probar localmente
 
@@ -46,11 +67,13 @@ http://localhost:3000
 
 ## Subir a Vercel
 
-1. Sube este proyecto a GitHub.
-2. En Vercel, crea un nuevo proyecto desde ese repositorio.
-3. Agrega `OPENAI_API_KEY` en Settings > Environment Variables.
+1. Sube esta carpeta a GitHub.
+2. En Vercel, importa el repositorio.
+3. Agrega las variables de entorno.
 4. Deploy.
 
-## Siguiente módulo sugerido
+## Cómo funciona el “aprendizaje” en esta versión
 
-Después de probar este flujo, el siguiente paso es ajustar el prompt editorial con ejemplos reales de ChequeaBolivia y una estructura definitiva de verificación.
+No entrena un modelo propio. La herramienta guarda versiones aprobadas por el editor en `style_examples`. Luego, cuando genera un nuevo borrador, busca ejemplos aprobados de la misma categoría y los usa como referencia de estilo, sin copiar datos.
+
+Esto evita que la herramienta aprenda automáticamente de borradores incompletos o errores no revisados.
